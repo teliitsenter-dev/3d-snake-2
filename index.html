@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>3D Змейка: Механика Замедления</title>
+<title>3D Змейка: Эффект Щита</title>
 <style>
 body {
     margin: 0;
@@ -26,6 +26,7 @@ h1 {
     font-size: 20px; 
     margin-bottom: 10px; 
     font-weight: bold; 
+    text-align: center;
 }
 #canvas-container {
     width: 400px;
@@ -125,6 +126,7 @@ let score = 0;
 const baseSpeed = 0.12; 
 let speed = baseSpeed;       
 let speedBoostTimer = 0;     
+let diamondTimer = 0; 
 const segmentSpacing = 4; 
 
 let targetAngle = 0;
@@ -133,7 +135,7 @@ let currentAngle = 0;
 // Параметры Еды
 let foodPosition = new THREE.Vector3();
 let foodMesh;
-let isGoldApple = false;     
+let foodType = "normal"; 
 
 // Параметры NPC
 let npcs = [];
@@ -145,6 +147,16 @@ let npcRespawnTimer = 0;
 const playerMaterial = new THREE.MeshStandardMaterial({ color: 0x27ae60, roughness: 0.3 }); 
 const npcMaterial = new THREE.MeshStandardMaterial({ color: 0xd63031, roughness: 0.3 }); 
 
+// МАТЕРИАЛ ЖЁЛТОГО ЩИТА (Свечение, глянец и полупрозрачность)
+const shieldMaterial = new THREE.MeshStandardMaterial({ 
+    color: 0xf1c40f, 
+    emissive: 0xd35400, // Внутреннее оранжево-жёлтое свечение
+    roughness: 0.1, 
+    metalness: 0.5,
+    transparent: true, 
+    opacity: 0.85 
+});
+
 const headGeometry = new THREE.SphereGeometry(0.52, 32, 32);
 const bodyGeometry = new THREE.SphereGeometry(0.48, 32, 32); 
 
@@ -154,27 +166,32 @@ const npcEyeMaterial = new THREE.MeshStandardMaterial({ color: 0xf1c40f });
 const pupilGeometry = new THREE.SphereGeometry(0.06, 16, 16);
 const pupilMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
 
-function createRealisticApple(gold = false) {
+function createRealisticApple(type = "normal") {
     const appleGroup = new THREE.Group();
     const appleGeo = new THREE.SphereGeometry(0.38, 32, 32);
     
-    const appleMat = gold ? 
-        new THREE.MeshStandardMaterial({ color: 0xf1c40f, roughness: 0.1, metalness: 0.8 }) : 
-        new THREE.MeshStandardMaterial({ color: 0xcc2424, roughness: 0.15 });
+    let appleMat;
+    if (type === "gold") {
+        appleMat = new THREE.MeshStandardMaterial({ color: 0xf1c40f, roughness: 0.1, metalness: 0.8 });
+    } else if (type === "diamond") {
+        appleMat = new THREE.MeshStandardMaterial({ color: 0x00d2d3, roughness: 0.05, metalness: 0.9, transparent: true, opacity: 0.85 });
+    } else {
+        appleMat = new THREE.MeshStandardMaterial({ color: 0xcc2424, roughness: 0.15 });
+    }
         
     const apple = new THREE.Mesh(appleGeo, appleMat);
     apple.scale.set(1, 1, 0.88); 
     appleGroup.add(apple);
 
     const stemGeo = new THREE.CylinderGeometry(0.02, 0.015, 0.22, 12);
-    const stemMat = new THREE.MeshStandardMaterial({ color: gold ? 0x964b00 : 0x5c4033 });
+    const stemMat = new THREE.MeshStandardMaterial({ color: type === "gold" ? 0x964b00 : (type === "diamond" ? 0x54a0ff : 0x5c4033) });
     const stem = new THREE.Mesh(stemGeo, stemMat);
     stem.position.set(0, 0.12, 0.28);
     stem.rotation.set(Math.PI / 3, 0, -Math.PI / 6);
     appleGroup.add(stem);
 
     const leafGeo = new THREE.SphereGeometry(0.07, 16, 16);
-    const leafMat = new THREE.MeshStandardMaterial({ color: gold ? 0x27ae60 : 0x2ecc71 });
+    const leafMat = new THREE.MeshStandardMaterial({ color: type === "gold" ? 0x27ae60 : (type === "diamond" ? 0x01cbc6 : 0x2ecc71) });
     const leaf = new THREE.Mesh(leafGeo, leafMat);
     leaf.scale.set(2, 0.6, 0.2); 
     leaf.position.set(0.12, 0.2, 0.32);
@@ -189,9 +206,16 @@ function spawnFood() {
     const range = worldSize / 2 - 1;
     foodPosition.set((Math.random() - 0.5) * range * 2, (Math.random() - 0.5) * range * 2, 0.05);
     
-    isGoldApple = Math.random() < 0.25; 
+    const rand = Math.random();
+    if (rand < 0.05) {
+        foodType = "diamond"; 
+    } else if (rand < 0.30) {
+        foodType = "gold";    
+    } else {
+        foodType = "normal";
+    }
     
-    foodMesh = createRealisticApple(isGoldApple);
+    foodMesh = createRealisticApple(foodType);
     foodMesh.position.copy(foodPosition);
     scene.add(foodMesh);
 }
@@ -243,6 +267,7 @@ function resetGame() {
     targetAngle = 0; currentAngle = 0;
     speed = baseSpeed;
     speedBoostTimer = 0;
+    diamondTimer = 0;
     npcRespawnTimer = 0;
 
     snakeSegments.forEach(seg => scene.remove(seg));
@@ -275,25 +300,40 @@ function lerpAngle(a, b, t) {
 function updateGameLogic() {
     if (snakeSegments.length === 0) return;
 
-    // МЕХАНИКА ЗАМЕДЛЕНИЯ ИГРОКА: За каждый съеденный сегмент скорость падает на 0.003
-    // Но скорость не может упасть ниже минимального лимита (0.05), чтобы змейка не остановилась совсем
     let weightSlowdown = (snakeSegments.length - 4) * 0.003;
     let currentBaseSpeed = Math.max(0.05, baseSpeed - weightSlowdown);
 
-    // Расчёт и вывод состояния ТУРБО / Обычной скорости
     let scoreText = `Счёт: ${score}`;
-    if (speedBoostTimer > 0) {
+    let hasShield = false;
+
+    if (diamondTimer > 0) {
+        diamondTimer--;
+        hasShield = true;
+        speed = baseSpeed * 1.3; 
+        const secLeft = Math.ceil(diamondTimer / 60);
+        scoreText += ` <span style="color:#f1c40f;">🛡️ ЭНЕРГОЩИТ (${secLeft}с)</span>`;
+        
+        // Динамический перелив цвета щита во времени
+        let wave = Math.sin(Date.now() * 0.005) * 0.2 + 0.8; 
+        shieldMaterial.color.setRGB(1, 0.7 + wave * 0.25, 0.1); 
+        shieldMaterial.emissive.setRGB(0.8, 0.3 * wave, 0);
+    } else if (speedBoostTimer > 0) {
         speedBoostTimer--;
-        speed = baseSpeed * 1.6; // Золотое яблоко временно игнорирует тяжесть и ускоряет
-        scoreText += ` <span style="color:#f1c40f;">⚡ ТУРБО!</span>`;
+        speed = baseSpeed * 1.6; 
+        scoreText += ` <span style="color:#e67e22;">⚡ ТУРБО!</span>`;
     } else {
         speed = currentBaseSpeed; 
     }
+
+    // Переключение материала змейки (Обычный или Щит)
+    snakeSegments.forEach(seg => {
+        seg.material = hasShield ? shieldMaterial : playerMaterial;
+    });
     
     if (npcRespawnTimer > 0) {
         npcRespawnTimer--;
         const secondsLeft = Math.ceil(npcRespawnTimer / 60);
-        scoreText += ` | 🔴 Воришка возродится через: ${secondsLeft}с`;
+        scoreText += ` | 🔴 Воришка через: ${secondsLeft}с`;
         
         if (npcRespawnTimer === 0 && npcs.length === 0) {
             npcs.push(createNpc()); 
@@ -324,9 +364,14 @@ function updateGameLogic() {
 
     // Поедание яблок игроком
     if (head.position.distanceTo(foodPosition) < 0.75) {
-        if (isGoldApple) {
+        if (foodType === "diamond") {
+            score += 3;
+            diamondTimer = 300; 
+            speedBoostTimer = 0; 
+        } else if (foodType === "gold") {
             score += 2;          
             speedBoostTimer = 300; 
+            diamondTimer = 0;
         } else {
             score += 1;
         }
@@ -353,20 +398,20 @@ function updateGameLogic() {
         const npc = npcs[n];
         const npcHead = npc.segments[0];
 
-        // МЕХАНИКА ЗАМЕДЛЕНИЯ NPC: За каждый добавленный сегмент замедляется на 0.004
         let npcWeightSlowdown = (npc.segments.length - 5) * 0.004;
         let currentNpcSpeed = Math.max(0.05, baseNpcSpeed - npcWeightSlowdown);
 
-        // Столкновение: Игрок головой в тело NPC -> Проигрыш
-        for (let i = 0; i < npc.segments.length; i++) {
-            if (head.position.distanceTo(npc.segments[i].position) < 0.45) {
-                alert("Ты врезался в красного воришку! Игра окончена. Счёт: " + score);
-                resetGame();
-                return;
+        // Столкновение: под щитом змейка бессмертна к атакам NPC!
+        if (!hasShield) {
+            for (let i = 0; i < npc.segments.length; i++) {
+                if (head.position.distanceTo(npc.segments[i].position) < 0.45) {
+                    alert("Ты врезался в красного воришку! Игра окончена. Счёт: " + score);
+                    resetGame();
+                    return;
+                }
             }
         }
 
-        // Столкновение: NPC головой в тело Игрока -> Уничтожение NPC на 20 секунд
         let npcCrushed = false;
         for (let i = 0; i < snakeSegments.length; i++) {
             if (npcHead.position.distanceTo(snakeSegments[i].position) < 0.45) {
@@ -380,7 +425,6 @@ function updateGameLogic() {
 
         if (npcCrushed) continue; 
 
-        // Движение живого NPC с учётом его текущей скорости (замедленной от еды)
         const diffX = foodPosition.x - npcHead.position.x;
         const diffY = foodPosition.y - npcHead.position.y;
         const desiredAngle = Math.atan2(diffY, diffX);
@@ -404,7 +448,6 @@ function updateGameLogic() {
             if (npc.history[idx]) npc.segments[i].position.copy(npc.history[idx]);
         }
 
-        // Если NPC крадет яблоко
         if (npcHead.position.distanceTo(foodPosition) < 0.65) {
             const nextIdx = npc.segments.length;
             const newSeg = createVisualSegment(nextIdx, false, true);
@@ -422,7 +465,7 @@ function animate() {
     if (foodMesh) {
         foodMesh.position.z = 0.05 + Math.sin(Date.now() * 0.004) * 0.08; 
         foodMesh.rotation.z += 0.015; 
-        if (isGoldApple) {
+        if (foodType === "gold" || foodType === "diamond") {
             foodMesh.rotation.x = Math.sin(Date.now() * 0.002) * 0.2;
         }
     }
@@ -473,4 +516,3 @@ resetGame();
 </script>
 </body>
 </html>
-
