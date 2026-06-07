@@ -58,6 +58,14 @@ h1 {
     box-shadow: 0 4px 8px rgba(0,0,0,0.3);
 }
 </style>
+<link rel="manifest" href="manifest.json">
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js')
+      .then(() => console.log('Service Worker Registered'))
+      .catch((err) => console.log('Service Worker Failed', err));
+  }
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
@@ -465,3 +473,4 @@ resetGame();
 </script>
 </body>
 </html>
+
