@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>3D Змейка: Эффект Щита</title>
+<title>3D Змейка: Эффект Щита и Настройки</title>
 <style>
 body {
     margin: 0;
@@ -16,6 +16,7 @@ body {
     min-height: 100vh;
     overflow: hidden;
     user-select: none;
+    transition: background 0.5s;
 }
 h1 { 
     margin: 15px 0 5px; 
@@ -37,6 +38,54 @@ h1 {
     position: relative;
     box-shadow: 0 10px 25px rgba(0,0,0,0.3);
     border-radius: 8px;
+    transition: border-color 0.5s;
+}
+/* Стили для меню настройки */
+#menu-overlay {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(62, 39, 35, 0.9);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    z-index: 10;
+    color: #fff;
+    padding: 20px;
+    box-sizing: border-box;
+}
+.menu-group {
+    margin-bottom: 12px;
+    display: flex;
+    flex-direction: column;
+    width: 80%;
+}
+.menu-group label {
+    font-size: 14px;
+    margin-bottom: 5px;
+    color: #e4b77d;
+}
+.menu-group select, .menu-group input {
+    padding: 8px;
+    border-radius: 4px;
+    border: none;
+    font-size: 16px;
+}
+#start-btn {
+    background: #27ae60;
+    color: white;
+    border: none;
+    padding: 10px 25px;
+    font-size: 18px;
+    font-weight: bold;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-top: 10px;
+    transition: background 0.2s;
+}
+#start-btn:hover {
+    background: #219653;
 }
 #joystick {
     width: 130px;
@@ -74,7 +123,37 @@ h1 {
 <h1>🌵 Сытая и Тяжёлая Змейка 🍏 Вес = Замедление</h1>
 <div id="score">Счёт: 0</div>
 
-<div id="canvas-container"></div>
+<div id="canvas-container">
+    <div id="menu-overlay">
+        <h2>⚙️ Настройки игры</h2>
+        
+        <div class="menu-group">
+            <label for="location-select">Выбор локации:</label>
+            <select id="location-select">
+                <option value="desert">🌵 Пустыня</option>
+                <option value="meadow">🌿 Зелёная поляна</option>
+            </select>
+        </div>
+
+        <div class="menu-group">
+            <label for="color-select">Цвет змейки:</label>
+            <select id="color-select">
+                <option value="0x27ae60">Зелёный</option>
+                <option value="0xf1c40f">Жёлтый</option>
+                <option value="0x2980b9">Синий</option>
+                <option value="0xc0392b">Красный</option>
+                <option value="0xe67e22">Оранжевый</option>
+                <option value="0x8e44ad">Фиолетовый</option>
+            </select>
+        </div>
+
+        <div class="menu-group">
+            <label for="win-score-input">Очков для победы (0 — без лимита):</label>
+            <input type="number" id="win-score-input" value="15" min="0" max="999">
+        </div>
+        <button id="start-btn">Играть!</button>
+    </div>
+</div>
 
 <div id="joystick">
     <div id="stick"></div>
@@ -83,11 +162,16 @@ h1 {
 <script>
 const container = document.getElementById("canvas-container");
 const scoreEl = document.getElementById("score");
+const menuOverlay = document.getElementById("menu-overlay");
+const startBtn = document.getElementById("start-btn");
+const colorSelect = document.getElementById("color-select");
+const winScoreInput = document.getElementById("win-score-input");
+const locationSelect = document.getElementById("location-select");
 
 const worldSize = 20; 
+let isGameRunning = false; 
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xdfb074); 
 
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
 camera.position.set(0, 0, 24); 
@@ -99,29 +183,52 @@ renderer.setPixelRatio(Math.max(window.devicePixelRatio, 2));
 container.appendChild(renderer.domElement);
 
 // Освещение
-const ambientLight = new THREE.AmbientLight(0xfff0db, 0.75); 
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.75); 
 scene.add(ambientLight);
-const dirLight = new THREE.DirectionalLight(0xfffaed, 1.2); 
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.2); 
 dirLight.position.set(8, 12, 20); 
 scene.add(dirLight);
 
 // Арена
 const groundGeometry = new THREE.PlaneGeometry(worldSize, worldSize);
-const groundMaterial = new THREE.MeshStandardMaterial({ color: 0xd29954, roughness: 0.9 });
+const groundMaterial = new THREE.MeshStandardMaterial({ roughness: 0.9 });
 const ground = new THREE.Mesh(groundGeometry, groundMaterial);
 ground.position.z = -0.45; 
 scene.add(ground);
 
 const borderGeo = new THREE.EdgesGeometry(new THREE.PlaneGeometry(worldSize, worldSize));
-const borderMat = new THREE.LineBasicMaterial({ color: 0xb58248 });
+const borderMat = new THREE.LineBasicMaterial();
 const wireframe = new THREE.LineSegments(borderGeo, borderMat);
 wireframe.position.z = -0.43;
 scene.add(wireframe);
 
-// Параметры Игрока
+// Конфигурация локаций
+const environments = {
+    desert: {
+        bgBody: "#e4b77d",
+        borderCSS: "#b58248",
+        sceneBg: 0xdfb074,
+        groundColor: 0xd29954,
+        borderColor: 0xb58248,
+        ambientColor: 0xfff0db,
+        dirColor: 0xfffaed
+    },
+    meadow: {
+        bgBody: "#a8e6cf",
+        borderCSS: "#56ab2f",
+        sceneBg: 0x81c784,
+        groundColor: 0x4caf50,
+        borderColor: 0x2e7d32,
+        ambientColor: 0xe8f5e9,
+        dirColor: 0xffffff
+    }
+};
+
+// Параметры Игрока и Правил
 let snakeSegments = []; 
 let snakeHistory = [];  
 let score = 0;
+let winScore = 15; 
 
 const baseSpeed = 0.12; 
 let speed = baseSpeed;       
@@ -144,13 +251,13 @@ const baseNpcSpeed = 0.14;
 let npcRespawnTimer = 0; 
 
 // Визуальные материалы
-const playerMaterial = new THREE.MeshStandardMaterial({ color: 0x27ae60, roughness: 0.3 }); 
+let playerMaterial = new THREE.MeshStandardMaterial({ color: 0x27ae60, roughness: 0.3 }); 
 const npcMaterial = new THREE.MeshStandardMaterial({ color: 0xd63031, roughness: 0.3 }); 
 
-// МАТЕРИАЛ ЖЁЛТОГО ЩИТА (Свечение, глянец и полупрозрачность)
+// МАТЕРИАЛ ЖЁЛТОГО ЩИТА
 const shieldMaterial = new THREE.MeshStandardMaterial({ 
     color: 0xf1c40f, 
-    emissive: 0xd35400, // Внутреннее оранжево-жёлтое свечение
+    emissive: 0xd35400, 
     roughness: 0.1, 
     metalness: 0.5,
     transparent: true, 
@@ -165,6 +272,19 @@ const eyeMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff });
 const npcEyeMaterial = new THREE.MeshStandardMaterial({ color: 0xf1c40f }); 
 const pupilGeometry = new THREE.SphereGeometry(0.06, 16, 16);
 const pupilMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+
+function updateEnvironment(envKey) {
+    const env = environments[envKey];
+    
+    document.body.style.background = env.bgBody;
+    container.style.borderColor = env.borderCSS;
+    
+    scene.background = new THREE.Color(env.sceneBg);
+    groundMaterial.color.setHex(env.groundColor);
+    borderMat.color.setHex(env.borderColor);
+    ambientLight.color.setHex(env.ambientColor);
+    dirLight.color.setHex(env.dirColor);
+}
 
 function createRealisticApple(type = "normal") {
     const appleGroup = new THREE.Group();
@@ -207,12 +327,12 @@ function spawnFood() {
     foodPosition.set((Math.random() - 0.5) * range * 2, (Math.random() - 0.5) * range * 2, 0.05);
     
     const rand = Math.random();
-    if (rand < 0.05) {
-        foodType = "diamond"; 
-    } else if (rand < 0.30) {
-        foodType = "gold";    
+    if (rand < 0.20) {
+        foodType = "diamond"; // Шанс увеличен до 20%
+    } else if (rand < 0.45) {
+        foodType = "gold";    // Шанс 25%
     } else {
-        foodType = "normal";
+        foodType = "normal";  // Шанс 55%
     }
     
     foodMesh = createRealisticApple(foodType);
@@ -263,6 +383,9 @@ function removeNpc(npc) {
 }
 
 function resetGame() {
+    isGameRunning = false;
+    menuOverlay.style.display = "flex"; 
+    
     score = 0;
     targetAngle = 0; currentAngle = 0;
     speed = baseSpeed;
@@ -273,6 +396,26 @@ function resetGame() {
     snakeSegments.forEach(seg => scene.remove(seg));
     snakeSegments = []; snakeHistory = [];
 
+    npcs.forEach(npc => removeNpc(npc));
+    npcs = [];
+
+    updateEnvironment(locationSelect.value);
+}
+
+locationSelect.addEventListener("change", (e) => {
+    updateEnvironment(e.target.value);
+});
+
+function startGame() {
+    updateEnvironment(locationSelect.value);
+
+    const selectedColor = parseInt(colorSelect.value);
+    playerMaterial.color.setHex(selectedColor);
+
+    winScore = parseInt(winScoreInput.value) || 0;
+
+    menuOverlay.style.display = "none"; 
+
     for (let i = 0; i < 4; i++) {
         const seg = createVisualSegment(i, i === 0, false);
         seg.position.set(0, 0, 0);
@@ -282,14 +425,15 @@ function resetGame() {
         snakeHistory.push(new THREE.Vector3(0 - (i * speed), 0, 0));
     }
 
-    npcs.forEach(npc => removeNpc(npc));
-    npcs = [];
     for (let i = 0; i < numNpcs; i++) {
         npcs.push(createNpc());
     }
 
     spawnFood();
+    isGameRunning = true;
 }
+
+startBtn.addEventListener("click", startGame);
 
 function lerpAngle(a, b, t) {
     let cs = (1 - t) * Math.cos(a) + t * Math.cos(b);
@@ -298,12 +442,18 @@ function lerpAngle(a, b, t) {
 }
 
 function updateGameLogic() {
-    if (snakeSegments.length === 0) return;
+    if (!isGameRunning || snakeSegments.length === 0) return;
+
+    if (winScore > 0 && score >= winScore) {
+        alert(`🏆 ПОБЕДА! Вы набрали необходимые ${winScore} очков!`);
+        resetGame();
+        return;
+    }
 
     let weightSlowdown = (snakeSegments.length - 4) * 0.003;
     let currentBaseSpeed = Math.max(0.05, baseSpeed - weightSlowdown);
 
-    let scoreText = `Счёт: ${score}`;
+    let scoreText = `Счёт: ${score}${winScore > 0 ? " / " + winScore : ""}`;
     let hasShield = false;
 
     if (diamondTimer > 0) {
@@ -313,7 +463,6 @@ function updateGameLogic() {
         const secLeft = Math.ceil(diamondTimer / 60);
         scoreText += ` <span style="color:#f1c40f;">🛡️ ЭНЕРГОЩИТ (${secLeft}с)</span>`;
         
-        // Динамический перелив цвета щита во времени
         let wave = Math.sin(Date.now() * 0.005) * 0.2 + 0.8; 
         shieldMaterial.color.setRGB(1, 0.7 + wave * 0.25, 0.1); 
         shieldMaterial.emissive.setRGB(0.8, 0.3 * wave, 0);
@@ -325,7 +474,6 @@ function updateGameLogic() {
         speed = currentBaseSpeed; 
     }
 
-    // Переключение материала змейки (Обычный или Щит)
     snakeSegments.forEach(seg => {
         seg.material = hasShield ? shieldMaterial : playerMaterial;
     });
@@ -362,7 +510,6 @@ function updateGameLogic() {
         if (snakeHistory[idx]) snakeSegments[i].position.copy(snakeHistory[idx]);
     }
 
-    // Поедание яблок игроком
     if (head.position.distanceTo(foodPosition) < 0.75) {
         if (foodType === "diamond") {
             score += 3;
@@ -384,7 +531,6 @@ function updateGameLogic() {
         spawnFood();
     }
 
-    // Самопересечение
     for (let i = 6; i < snakeSegments.length; i++) {
         if (head.position.distanceTo(snakeSegments[i].position) < 0.4) {
             alert("Игра окончена! Ты врезался в себя. Твой счёт: " + score);
@@ -401,7 +547,6 @@ function updateGameLogic() {
         let npcWeightSlowdown = (npc.segments.length - 5) * 0.004;
         let currentNpcSpeed = Math.max(0.05, baseNpcSpeed - npcWeightSlowdown);
 
-        // Столкновение: под щитом змейка бессмертна к атакам NPC!
         if (!hasShield) {
             for (let i = 0; i < npc.segments.length; i++) {
                 if (head.position.distanceTo(npc.segments[i].position) < 0.45) {
@@ -473,20 +618,23 @@ function animate() {
 }
 animate();
 
-// Управление
+// Управление клавиатурой
 document.addEventListener("keydown", e => {
-    if (e.key === "ArrowRight") targetAngle = 0;
-    if (e.key === "ArrowUp")    targetAngle = Math.PI / 2;
-    if (e.key === "ArrowLeft")  targetAngle = Math.PI;
-    if (e.key === "ArrowDown")  targetAngle = -Math.PI / 2;
+    if (!isGameRunning) return;
+    if (e.key === "ArrowRight" || e.key.toLowerCase() === "d") targetAngle = 0;
+    if (e.key === "ArrowUp"    || e.key.toLowerCase() === "w") targetAngle = Math.PI / 2;
+    if (e.key === "ArrowLeft"  || e.key.toLowerCase() === "a") targetAngle = Math.PI;
+    if (e.key === "ArrowDown"  || e.key.toLowerCase() === "s") targetAngle = -Math.PI / 2;
 });
 
+// Джойстик
 const joystick = document.getElementById("joystick");
 const stick = document.getElementById("stick");
 const center = 65; const maxDistance = 35;
 let active = false;
 
 function moveStick(clientX, clientY) {
+    if (!isGameRunning) return;
     const rect = joystick.getBoundingClientRect();
     let x = clientX - rect.left - center;
     let y = clientY - rect.top - center;
@@ -516,3 +664,4 @@ resetGame();
 </script>
 </body>
 </html>
+
