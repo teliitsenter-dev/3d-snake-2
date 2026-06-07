@@ -16,31 +16,35 @@ body {
     min-height: 100vh;
     overflow: hidden;
     user-select: none;
+    transition: background 0.5s;
 }
 h1 { 
-    margin: 10px 0 5px; 
-    font-size: 20px; 
+    margin: 15px 0 5px; 
+    font-size: 24px; 
+    text-shadow: 1px 1px 2px rgba(255,255,255,0.6); 
     text-align: center;
 }
 #score { 
-    font-size: 18px; 
-    margin-bottom: 5px; 
+    font-size: 20px; 
+    margin-bottom: 10px; 
     font-weight: bold; 
+    text-align: center;
 }
 #canvas-container {
-    width: 360px;
-    height: 360px;
-    max-width: 90vw;
-    max-height: 90vw;
+    width: 400px;
+    height: 400px;
+    max-width: 95vw;
+    max-height: 95vw;
     border: 4px solid #b58248;
     position: relative;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.3);
     border-radius: 8px;
-    background: #dfb074;
+    transition: border-color 0.5s;
 }
 #menu-overlay {
     position: absolute;
     top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(62, 39, 35, 0.95);
+    background: rgba(62, 39, 35, 0.9);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -48,71 +52,85 @@ h1 {
     border-radius: 4px;
     z-index: 10;
     color: #fff;
-    padding: 15px;
+    padding: 20px;
     box-sizing: border-box;
 }
 .menu-group {
-    margin-bottom: 10px;
+    margin-bottom: 12px;
     display: flex;
     flex-direction: column;
-    width: 85%;
+    width: 80%;
 }
 .menu-group label {
-    font-size: 13px;
-    margin-bottom: 4px;
+    font-size: 14px;
+    margin-bottom: 5px;
     color: #e4b77d;
 }
 .menu-group select, .menu-group input {
-    padding: 6px;
+    padding: 8px;
     border-radius: 4px;
     border: none;
-    font-size: 15px;
+    font-size: 16px;
 }
 #start-btn {
     background: #27ae60;
     color: white;
     border: none;
-    padding: 10px 30px;
+    padding: 10px 25px;
     font-size: 18px;
     font-weight: bold;
     border-radius: 4px;
     cursor: pointer;
-    margin-top: 5px;
+    margin-top: 10px;
+    transition: background 0.2s;
+}
+#start-btn:hover {
+    background: #219653;
 }
 #joystick {
-    width: 120px;
-    height: 120px;
+    width: 130px;
+    height: 130px;
     border-radius: 50%;
     background: rgba(93, 64, 55, 0.4);
     border: 2px solid #5d4037;
     position: relative;
-    margin-top: 15px;
+    margin-top: 20px;
     touch-action: none;
 }
 #stick {
-    width: 44px;
-    height: 44px;
+    width: 50px;
+    height: 50px;
     border-radius: 50%;
     background: #5d4037;
     position: absolute;
-    left: 38px;
-    top: 38px;
+    left: 40px;
+    top: 40px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
 }
 </style>
+
 <link rel="manifest" href="manifest.json">
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js')
+      .then(() => console.log('PWA Ready'))
+      .catch((err) => console.log('PWA Error', err));
+  }
+</script>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
 
-<h1>🌵 3D Змейка 🍏 Вес = Замедление</h1>
+<h1>🌵 Сытая и Тяжёлая Змейка 🍏 Вес = Замедление</h1>
 <div id="score">Счёт: 0</div>
 
 <div id="canvas-container">
     <div id="menu-overlay">
-        <h2 style="margin-top:0; font-size:20px;">⚙️ Настройки</h2>
+        <h2>⚙️ Настройки игры</h2>
         
         <div class="menu-group">
-            <label for="location-select">Локация:</label>
+            <label for="location-select">Выбор локации:</label>
             <select id="location-select">
                 <option value="desert">🌵 Пустыня</option>
                 <option value="meadow">🌿 Зелёная поляна</option>
@@ -126,12 +144,14 @@ h1 {
                 <option value="0xf1c40f">Жёлтый</option>
                 <option value="0x2980b9">Синий</option>
                 <option value="0xc0392b">Красный</option>
+                <option value="0xe67e22">Оранжевый</option>
+                <option value="0x8e44ad">Фиолетовый</option>
             </select>
         </div>
 
         <div class="menu-group">
-            <label for="win-score-input">Цель очков (0 - без лимита):</label>
-            <input type="number" id="win-score-input" value="15" min="0">
+            <label for="win-score-input">Очков для победы (0 — без лимита):</label>
+            <input type="number" id="win-score-input" value="15" min="0" max="999">
         </div>
         <button id="start-btn">Играть!</button>
     </div>
@@ -154,19 +174,20 @@ const worldSize = 20;
 let isGameRunning = false; 
 
 const scene = new THREE.Scene();
+
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
 camera.position.set(0, 0, 24); 
 camera.lookAt(0, 0, 0);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(container.clientWidth, container.clientHeight);
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+renderer.setSize(container.clientWidth || 400, container.clientHeight || 400);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); 
 container.appendChild(renderer.domElement);
 
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.8); 
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.75); 
 scene.add(ambientLight);
-const dirLight = new THREE.DirectionalLight(0xffffff, 1.0); 
-dirLight.position.set(5, 10, 15); 
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.2); 
+dirLight.position.set(8, 12, 20); 
 scene.add(dirLight);
 
 const groundGeometry = new THREE.PlaneGeometry(worldSize, worldSize);
@@ -176,25 +197,43 @@ ground.position.z = -0.45;
 scene.add(ground);
 
 const borderGeo = new THREE.EdgesGeometry(new THREE.PlaneGeometry(worldSize, worldSize));
-const borderMat = new THREE.LineBasicMaterial({ color: 0xb58248 });
+const borderMat = new THREE.LineBasicMaterial();
 const wireframe = new THREE.LineSegments(borderGeo, borderMat);
 wireframe.position.z = -0.43;
 scene.add(wireframe);
 
 const environments = {
-    desert: { bgBody: "#e4b77d", borderCSS: "#b58248", sceneBg: 0xdfb074, groundColor: 0xd29954 },
-    meadow: { bgBody: "#a8e6cf", borderCSS: "#56ab2f", sceneBg: 0x81c784, groundColor: 0x4caf50 }
+    desert: {
+        bgBody: "#e4b77d",
+        borderCSS: "#b58248",
+        sceneBg: 0xdfb074,
+        groundColor: 0xd29954,
+        borderColor: 0xb58248,
+        ambientColor: 0xfff0db,
+        dirColor: 0xfffaed
+    },
+    meadow: {
+        bgBody: "#a8e6cf",
+        borderCSS: "#56ab2f",
+        sceneBg: 0x81c784,
+        groundColor: 0x4caf50,
+        borderColor: 0x2e7d32,
+        ambientColor: 0xe8f5e9,
+        dirColor: 0xffffff
+    }
 };
 
 let snakeSegments = []; 
 let snakeHistory = [];  
 let score = 0;
 let winScore = 15; 
+
 const baseSpeed = 0.12; 
 let speed = baseSpeed;       
 let speedBoostTimer = 0;     
 let diamondTimer = 0; 
 const segmentSpacing = 4; 
+
 let targetAngle = 0;
 let currentAngle = 0;
 
@@ -203,18 +242,29 @@ let foodMesh;
 let foodType = "normal"; 
 
 let npcs = [];
-const baseNpcSpeed = 0.13; 
+const numNpcs = 1; 
+const baseNpcSpeed = 0.14; 
 let npcRespawnTimer = 0; 
 
-let playerMaterial = new THREE.MeshStandardMaterial({ roughness: 0.3 }); 
+let playerMaterial = new THREE.MeshStandardMaterial({ color: 0x27ae60, roughness: 0.3 }); 
 const npcMaterial = new THREE.MeshStandardMaterial({ color: 0xd63031, roughness: 0.3 }); 
-const shieldMaterial = new THREE.MeshStandardMaterial({ color: 0xf1c40f, emissive: 0xd35400, roughness: 0.1, transparent: true, opacity: 0.8 });
 
-const headGeometry = new THREE.SphereGeometry(0.52, 24, 24);
-const bodyGeometry = new THREE.SphereGeometry(0.48, 24, 24); 
-const eyeGeometry = new THREE.SphereGeometry(0.12, 12, 12);
+const shieldMaterial = new THREE.MeshStandardMaterial({ 
+    color: 0xf1c40f, 
+    emissive: 0xd35400, 
+    roughness: 0.1, 
+    metalness: 0.5,
+    transparent: true, 
+    opacity: 0.85 
+});
+
+const headGeometry = new THREE.SphereGeometry(0.52, 32, 32);
+const bodyGeometry = new THREE.SphereGeometry(0.48, 32, 32); 
+
+const eyeGeometry = new THREE.SphereGeometry(0.12, 16, 16);
 const eyeMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff });
-const pupilGeometry = new THREE.SphereGeometry(0.06, 12, 12);
+const npcEyeMaterial = new THREE.MeshStandardMaterial({ color: 0xf1c40f }); 
+const pupilGeometry = new THREE.SphereGeometry(0.06, 16, 16);
 const pupilMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
 
 function updateEnvironment(envKey) {
@@ -223,27 +273,43 @@ function updateEnvironment(envKey) {
     container.style.borderColor = env.borderCSS;
     scene.background = new THREE.Color(env.sceneBg);
     groundMaterial.color.setHex(env.groundColor);
-    borderMat.color.setHex(env.sceneBg);
+    borderMat.color.setHex(env.borderColor);
+    ambientLight.color.setHex(env.ambientColor);
+    dirLight.color.setHex(env.dirColor);
 }
 
 function createRealisticApple(type = "normal") {
     const appleGroup = new THREE.Group();
-    const appleGeo = new THREE.SphereGeometry(0.38, 24, 24);
-    let appleMat = new THREE.MeshStandardMaterial({ color: 0xcc2424, roughness: 0.2 });
+    const appleGeo = new THREE.SphereGeometry(0.38, 32, 32);
     
-    if (type === "diamond") appleMat = new THREE.MeshStandardMaterial({ color: 0x00d2d3, roughness: 0.05, metalness: 0.9, transparent: true, opacity: 0.8 });
-    else if (type === "gold") appleMat = new THREE.MeshStandardMaterial({ color: 0xf1c40f, roughness: 0.1, metalness: 0.7 });
+    let appleMat;
+    if (type === "diamond") {
+        appleMat = new THREE.MeshStandardMaterial({ color: 0x00d2d3, roughness: 0.05, metalness: 0.9, transparent: true, opacity: 0.85 });
+    } else if (type === "gold") {
+        appleMat = new THREE.MeshStandardMaterial({ color: 0xf1c40f, roughness: 0.1, metalness: 0.8 });
+    } else {
+        appleMat = new THREE.MeshStandardMaterial({ color: 0xcc2424, roughness: 0.15 });
+    }
         
     const apple = new THREE.Mesh(appleGeo, appleMat);
     apple.scale.set(1, 1, 0.88); 
     appleGroup.add(apple);
 
-    const stemGeo = new THREE.CylinderGeometry(0.02, 0.015, 0.2, 8);
-    const stemMat = new THREE.MeshStandardMaterial({ color: 0x5c4033 });
+    const stemGeo = new THREE.CylinderGeometry(0.02, 0.015, 0.22, 12);
+    const stemMat = new THREE.MeshStandardMaterial({ color: type === "gold" ? 0x964b00 : (type === "diamond" ? 0x54a0ff : 0x5c4033) });
     const stem = new THREE.Mesh(stemGeo, stemMat);
-    stem.position.set(0, 0.12, 0.25);
-    stem.rotation.set(Math.PI / 3, 0, 0);
+    stem.position.set(0, 0.12, 0.28);
+    stem.rotation.set(Math.PI / 3, 0, -Math.PI / 6);
     appleGroup.add(stem);
+
+    const leafGeo = new THREE.SphereGeometry(0.07, 16, 16);
+    const leafMat = new THREE.MeshStandardMaterial({ color: type === "gold" ? 0x27ae60 : (type === "diamond" ? 0x01cbc6 : 0x2ecc71) });
+    const leaf = new THREE.Mesh(leafGeo, leafMat);
+    leaf.scale.set(2, 0.6, 0.2); 
+    leaf.position.set(0.12, 0.2, 0.32);
+    leaf.rotation.set(Math.PI / 4, 0, -Math.PI / 4);
+    appleGroup.add(leaf);
+
     return appleGroup;
 }
 
@@ -253,9 +319,13 @@ function spawnFood() {
     foodPosition.set((Math.random() - 0.5) * range * 2, (Math.random() - 0.5) * range * 2, 0.05);
     
     const rand = Math.random();
-    if (rand < 0.20) foodType = "diamond"; 
-    else if (rand < 0.45) foodType = "gold";    
-    else foodType = "normal";  
+    if (rand < 0.20) {
+        foodType = "diamond"; 
+    } else if (rand < 0.45) {
+        foodType = "gold";    
+    } else {
+        foodType = "normal";  
+    }
     
     foodMesh = createRealisticApple(foodType);
     foodMesh.position.copy(foodPosition);
@@ -265,10 +335,11 @@ function spawnFood() {
 function createVisualSegment(index, isHead, isNpc) {
     let mesh;
     const mat = isNpc ? npcMaterial : playerMaterial; 
+    
     if (isHead) {
         mesh = new THREE.Mesh(headGeometry, mat);
-        const e1 = new THREE.Mesh(eyeGeometry, eyeMaterial);
-        const e2 = new THREE.Mesh(eyeGeometry, eyeMaterial);
+        const e1 = new THREE.Mesh(eyeGeometry, isNpc ? npcEyeMaterial : eyeMaterial);
+        const e2 = new THREE.Mesh(eyeGeometry, isNpc ? npcEyeMaterial : eyeMaterial);
         const p1 = new THREE.Mesh(pupilGeometry, pupilMaterial);
         const p2 = new THREE.Mesh(pupilGeometry, pupilMaterial);
         e1.position.set(0.24, 0.18, 0.22); e2.position.set(0.24, -0.18, 0.22);
@@ -287,12 +358,15 @@ function createNpc() {
     let npc = { segments: [], history: [], angle: Math.random() * Math.PI * 2 };
     const startX = (Math.random() - 0.5) * (worldSize - 4);
     const startY = (Math.random() - 0.5) * (worldSize - 4);
+
     for (let i = 0; i < 5; i++) {
         const seg = createVisualSegment(i, i === 0, true);
         seg.position.set(startX - (i * baseNpcSpeed), startY, 0);
         npc.segments.push(seg);
     }
-    for (let i = 0; i < 100; i++) npc.history.push(new THREE.Vector3(startX - (i * baseNpcSpeed), startY, 0));
+    for (let i = 0; i < 100; i++) {
+        npc.history.push(new THREE.Vector3(startX - (i * baseNpcSpeed), startY, 0));
+    }
     return npc;
 }
 
@@ -303,30 +377,45 @@ function removeNpc(npc) {
 function resetGame() {
     isGameRunning = false;
     menuOverlay.style.display = "flex"; 
-    score = 0; targetAngle = 0; currentAngle = 0;
-    speed = baseSpeed; speedBoostTimer = 0; diamondTimer = 0; npcRespawnTimer = 0;
+    
+    score = 0;
+    targetAngle = 0; currentAngle = 0;
+    speed = baseSpeed;
+    speedBoostTimer = 0;
+    diamondTimer = 0;
+    npcRespawnTimer = 0;
+
     snakeSegments.forEach(seg => scene.remove(seg));
     snakeSegments = []; snakeHistory = [];
+
     npcs.forEach(npc => removeNpc(npc));
     npcs = [];
+
     updateEnvironment(locationSelect.value);
 }
 
-locationSelect.addEventListener("change", (e) => updateEnvironment(e.target.value));
+locationSelect.addEventListener("change", (e) => {
+    updateEnvironment(e.target.value);
+});
 
 function startGame() {
     updateEnvironment(locationSelect.value);
-    playerMaterial.color.setHex(parseInt(colorSelect.value));
+    const selectedColor = parseInt(colorSelect.value);
+    playerMaterial.color.setHex(selectedColor);
     winScore = parseInt(winScoreInput.value) || 0;
     menuOverlay.style.display = "none"; 
 
     for (let i = 0; i < 4; i++) {
         const seg = createVisualSegment(i, i === 0, false);
+        seg.position.set(0, 0, 0);
         snakeSegments.push(seg);
     }
-    for (let i = 0; i < 150; i++) snakeHistory.push(new THREE.Vector3(0, 0, 0));
-
-    npcs.push(createNpc());
+    for (let i = 0; i < 150; i++) {
+        snakeHistory.push(new THREE.Vector3(0 - (i * speed), 0, 0));
+    }
+    for (let i = 0; i < numNpcs; i++) {
+        npcs.push(createNpc());
+    }
     spawnFood();
     isGameRunning = true;
 }
@@ -343,30 +432,45 @@ function updateGameLogic() {
     if (!isGameRunning || snakeSegments.length === 0) return;
 
     if (winScore > 0 && score >= winScore) {
-        alert(`🏆 ПОБЕДА! Очки: ${winScore}`);
-        resetGame(); return;
+        alert(`🏆 ПОБЕДА! Вы набрали необходимые ${winScore} очков!`);
+        resetGame();
+        return;
     }
 
     let weightSlowdown = (snakeSegments.length - 4) * 0.003;
     let currentBaseSpeed = Math.max(0.05, baseSpeed - weightSlowdown);
+
     let scoreText = `Счёт: ${score}${winScore > 0 ? " / " + winScore : ""}`;
     let hasShield = false;
 
     if (diamondTimer > 0) {
-        diamondTimer--; hasShield = true; speed = baseSpeed * 1.3; 
-        scoreText += ` <span style="color:#f1c40f;">🛡️ ЩИТ</span>`;
+        diamondTimer--;
+        hasShield = true;
+        speed = baseSpeed * 1.3; 
+        const secLeft = Math.ceil(diamondTimer / 60);
+        scoreText += ` <span style="color:#f1c40f;">🛡️ ЭНЕРГОЩИТ (${secLeft}с)</span>`;
+        let wave = Math.sin(Date.now() * 0.005) * 0.2 + 0.8; 
+        shieldMaterial.color.setRGB(1, 0.7 + wave * 0.25, 0.1); 
+        shieldMaterial.emissive.setRGB(0.8, 0.3 * wave, 0);
     } else if (speedBoostTimer > 0) {
-        speedBoostTimer--; speed = baseSpeed * 1.6; 
+        speedBoostTimer--;
+        speed = baseSpeed * 1.6; 
         scoreText += ` <span style="color:#e67e22;">⚡ ТУРБО!</span>`;
     } else {
         speed = currentBaseSpeed; 
     }
 
-    snakeSegments.forEach(seg => { seg.material = hasShield ? shieldMaterial : playerMaterial; });
+    snakeSegments.forEach(seg => {
+        seg.material = hasShield ? shieldMaterial : playerMaterial;
+    });
     
     if (npcRespawnTimer > 0) {
         npcRespawnTimer--;
-        if (npcRespawnTimer === 0 && npcs.length === 0) npcs.push(createNpc()); 
+        const secondsLeft = Math.ceil(npcRespawnTimer / 60);
+        scoreText += ` | 🔴 Воришка через: ${secondsLeft}с`;
+        if (npcRespawnTimer === 0 && npcs.length === 0) {
+            npcs.push(createNpc()); 
+        }
     }
     scoreEl.innerHTML = scoreText;
 
@@ -383,7 +487,7 @@ function updateGameLogic() {
     if (head.position.y < -halfWorld) head.position.y = halfWorld;
 
     snakeHistory.unshift(head.position.clone());
-    if (snakeHistory.length > snakeSegments.length * segmentSpacing + 10) snakeHistory.pop();
+    if (snakeHistory.length > snakeSegments.length * segmentSpacing + 20) snakeHistory.pop();
 
     for (let i = 1; i < snakeSegments.length; i++) {
         const idx = i * segmentSpacing;
@@ -391,27 +495,44 @@ function updateGameLogic() {
     }
 
     if (head.position.distanceTo(foodPosition) < 0.75) {
-        if (foodType === "diamond") { score += 3; diamondTimer = 300; speedBoostTimer = 0; } 
-        else if (foodType === "gold") { score += 2; speedBoostTimer = 300; diamondTimer = 0; } 
-        else { score += 1; }
-        
-        const newSeg = createVisualSegment(snakeSegments.length, false, false);
+        if (foodType === "diamond") {
+            score += 3;
+            diamondTimer = 300; 
+            speedBoostTimer = 0; 
+        } else if (foodType === "gold") {
+            score += 2;          
+            speedBoostTimer = 300; 
+            diamondTimer = 0;
+        } else {
+            score += 1;
+        }
+        const nextIdx = snakeSegments.length;
+        const newSeg = createVisualSegment(nextIdx, false, false);
+        newSeg.position.copy(snakeSegments[nextIdx - 1].position);
         snakeSegments.push(newSeg);
         spawnFood();
     }
 
     for (let i = 6; i < snakeSegments.length; i++) {
         if (head.position.distanceTo(snakeSegments[i].position) < 0.4) {
-            alert("Игра окончена! Твой счёт: " + score); resetGame(); return;
+            alert("Игра окончена! Ты врезался в себя. Твой счёт: " + score);
+            resetGame();
+            return;
         }
     }
 
     for (let n = npcs.length - 1; n >= 0; n--) {
-        const npc = npcs[n]; const npcHead = npc.segments[0];
+        const npc = npcs[n];
+        const npcHead = npc.segments[0];
+        let npcWeightSlowdown = (npc.segments.length - 5) * 0.004;
+        let currentNpcSpeed = Math.max(0.05, baseNpcSpeed - npcWeightSlowdown);
+
         if (!hasShield) {
             for (let i = 0; i < npc.segments.length; i++) {
                 if (head.position.distanceTo(npc.segments[i].position) < 0.45) {
-                    alert("Врезался в воришку! Счёт: " + score); resetGame(); return;
+                    alert("Ты врезался в красного воришку! Игра окончена. Счёт: " + score);
+                    resetGame();
+                    return;
                 }
             }
         }
@@ -419,15 +540,23 @@ function updateGameLogic() {
         let npcCrushed = false;
         for (let i = 0; i < snakeSegments.length; i++) {
             if (npcHead.position.distanceTo(snakeSegments[i].position) < 0.45) {
-                removeNpc(npc); npcs.splice(n, 1); npcRespawnTimer = 600; npcCrushed = true; break;
+                removeNpc(npc);
+                npcs.splice(n, 1);
+                npcRespawnTimer = 1200; 
+                npcCrushed = true;
+                break;
             }
         }
+
         if (npcCrushed) continue; 
 
-        const desiredAngle = Math.atan2(foodPosition.y - npcHead.position.y, foodPosition.x - npcHead.position.x);
+        const diffX = foodPosition.x - npcHead.position.x;
+        const diffY = foodPosition.y - npcHead.position.y;
+        const desiredAngle = Math.atan2(diffY, diffX);
         npc.angle = lerpAngle(npc.angle, desiredAngle, 0.08);
-        npcHead.position.x += Math.cos(npc.angle) * baseNpcSpeed;
-        npcHead.position.y += Math.sin(npc.angle) * baseNpcSpeed;
+
+        npcHead.position.x += Math.cos(npc.angle) * currentNpcSpeed;
+        npcHead.position.y += Math.sin(npc.angle) * currentNpcSpeed;
         npcHead.rotation.z = npc.angle;
 
         if (npcHead.position.x > halfWorld) npcHead.position.x = -halfWorld;
@@ -436,7 +565,7 @@ function updateGameLogic() {
         if (npcHead.position.y < -halfWorld) npcHead.position.y = halfWorld;
 
         npc.history.unshift(npcHead.position.clone());
-        if (npc.history.length > npc.segments.length * segmentSpacing + 10) npc.history.pop();
+        if (npc.history.length > npc.segments.length * segmentSpacing + 20) npc.history.pop();
 
         for (let i = 1; i < npc.segments.length; i++) {
             const idx = i * segmentSpacing;
@@ -444,8 +573,11 @@ function updateGameLogic() {
         }
 
         if (npcHead.position.distanceTo(foodPosition) < 0.65) {
-            const newSeg = createVisualSegment(npc.segments.length, false, true);
-            npc.segments.push(newSeg); spawnFood();
+            const nextIdx = npc.segments.length;
+            const newSeg = createVisualSegment(nextIdx, false, true);
+            newSeg.position.copy(npc.segments[nextIdx - 1].position);
+            npc.segments.push(newSeg);
+            spawnFood();
         }
     }
 }
@@ -454,8 +586,11 @@ function animate() {
     requestAnimationFrame(animate);
     updateGameLogic();
     if (foodMesh) {
-        foodMesh.position.z = 0.05 + Math.sin(Date.now() * 0.004) * 0.05; 
-        foodMesh.rotation.z += 0.01; 
+        foodMesh.position.z = 0.05 + Math.sin(Date.now() * 0.004) * 0.08; 
+        foodMesh.rotation.z += 0.015; 
+        if (foodType === "gold" || foodType === "diamond") {
+            foodMesh.rotation.x = Math.sin(Date.now() * 0.002) * 0.2;
+        }
     }
     renderer.render(scene, camera);
 }
@@ -471,23 +606,35 @@ document.addEventListener("keydown", e => {
 
 const joystick = document.getElementById("joystick");
 const stick = document.getElementById("stick");
-const center = 60; const maxDistance = 30;
+const center = 65; const maxDistance = 35;
 let active = false;
 
 function moveStick(clientX, clientY) {
     if (!isGameRunning) return;
     const rect = joystick.getBoundingClientRect();
-    let x = clientX - rect.left - center; let y = clientY - rect.top - center;
+    let x = clientX - rect.left - center;
+    let y = clientY - rect.top - center;
     const distance = Math.sqrt(x*x + y*y);
 
-    if (distance > maxDistance) { x = x / distance * maxDistance; y = y / distance * maxDistance; }
-    stick.style.left = (center - 22 + x) + "px"; stick.style.top  = (center - 22 + y) + "px";
-    if (distance > 5) targetAngle = Math.atan2(-y, x);
+    if (distance > maxDistance) {
+        x = x / distance * maxDistance; y = y / distance * maxDistance;
+    }
+    stick.style.left = (center - 25 + x) + "px";
+    stick.style.top  = (center - 25 + y) + "px";
+
+    if (distance > 5) { targetAngle = Math.atan2(-y, x); }
 }
 
 joystick.addEventListener("touchstart", e => { active = true; moveStick(e.touches[0].clientX, e.touches[0].clientY); });
 joystick.addEventListener("touchmove", e => { if(!active) return; e.preventDefault(); moveStick(e.touches[0].clientX, e.touches[0].clientY); });
-joystick.addEventListener("touchend", () => { active = false; stick.style.left = "38px"; stick.style.top = "38px"; });
+joystick.addEventListener("touchend", () => { active = false; stick.style.left = "40px"; stick.style.top = "40px"; });
+
+void function resize() {
+    const width = Math.min(400, window.innerWidth * 0.95);
+    renderer.setSize(width, width);
+    container.style.width = width + "px"; container.style.height = width + "px";
+    window.addEventListener('resize', resize);
+}();
 
 resetGame();
 </script>
