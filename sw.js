@@ -1,7 +1,8 @@
-const CACHE_NAME = 'snake-v1';
+const CACHE_NAME = 'snake-v3';
 const ASSETS = [
   './',
   './index.html',
+  './manifest.json',
   'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'
 ];
 
@@ -13,7 +14,6 @@ self.addEventListener('install', (e) => {
 
 self.addEventListener('fetch', (e) => {
   e.respondWith(
-    caches.match(e.request).then((response) => response || fetch(e.request))
+    caches.match(e.request).then((res) => res || fetch(e.request))
   );
 });
-
