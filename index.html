@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3D Змейка: Механика Замедления</title>
+<style>
+body {
+    margin: 0;
+    background: #e4b77d; 
+    color: #3e2723;
+    font-family: Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    overflow: hidden;
+    user-select: none;
+}
+h1 { 
+    margin: 15px 0 5px; 
+    font-size: 24px; 
+    text-shadow: 1px 1px 2px rgba(255,255,255,0.6); 
+}
+#score { 
+    font-size: 20px; 
+    margin-bottom: 10px; 
+    font-weight: bold; 
+}
+#canvas-container {
+    width: 400px;
+    height: 400px;
+    max-width: 95vw;
+    max-height: 95vw;
+    border: 4px solid #b58248;
+    position: relative;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+    border-radius: 8px;
+}
+#joystick {
+    width: 130px;
+    height: 130px;
+    border-radius: 50%;
+    background: rgba(93, 64, 55, 0.4);
+    border: 2px solid #5d4037;
+    position: relative;
+    margin-top: 20px;
+    touch-action: none;
+}
+#stick {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: #5d4037;
+    position: absolute;
+    left: 40px;
+    top: 40px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+<h1>🌵 Сытая и Тяжёлая Змейка 🍏 Вес = Замедление</h1>
+<div id="score">Счёт: 0</div>
+
+<div id="canvas-container"></div>
+
+<div id="joystick">
+    <div id="stick"></div>
+</div>
+
+<script>
+const container = document.getElementById("canvas-container");
+const scoreEl = document.getElementById("score");
+
+const worldSize = 20; 
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xdfb074); 
+
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+camera.position.set(0, 0, 24); 
+camera.lookAt(0, 0, 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+renderer.setSize(400, 400);
+renderer.setPixelRatio(Math.max(window.devicePixelRatio, 2)); 
+container.appendChild(renderer.domElement);
+
+// Освещение
+const ambientLight = new THREE.AmbientLight(0xfff0db, 0.75); 
+scene.add(ambientLight);
+const dirLight = new THREE.DirectionalLight(0xfffaed, 1.2); 
+dirLight.position.set(8, 12, 20); 
+scene.add(dirLight);
+
+// Арена
+const groundGeometry = new THREE.PlaneGeometry(worldSize, worldSize);
+const groundMaterial = new THREE.MeshStandardMaterial({ color: 0xd29954, roughness: 0.9 });
+const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+ground.position.z = -0.45; 
+scene.add(ground);
+
+const borderGeo = new THREE.EdgesGeometry(new THREE.PlaneGeometry(worldSize, worldSize));
+const borderMat = new THREE.LineBasicMaterial({ color: 0xb58248 });
+const wireframe = new THREE.LineSegments(borderGeo, borderMat);
+wireframe.position.z = -0.43;
+scene.add(wireframe);
+
+// Параметры Игрока
+let snakeSegments = []; 
+let snakeHistory = [];  
+let score = 0;
+
+const baseSpeed = 0.12; 
+let speed = baseSpeed;       
+let speedBoostTimer = 0;     
+const segmentSpacing = 4; 
+
+let targetAngle = 0;
+let currentAngle = 0;
+
+// Параметры Еды
+let foodPosition = new THREE.Vector3();
+let foodMesh;
+let isGoldApple = false;     
+
+// Параметры NPC
+let npcs = [];
+const numNpcs = 1; 
+const baseNpcSpeed = 0.14; 
+let npcRespawnTimer = 0; 
+
+// Визуальные материалы
+const playerMaterial = new THREE.MeshStandardMaterial({ color: 0x27ae60, roughness: 0.3 }); 
+const npcMaterial = new THREE.MeshStandardMaterial({ color: 0xd63031, roughness: 0.3 }); 
+
+const headGeometry = new THREE.SphereGeometry(0.52, 32, 32);
+const bodyGeometry = new THREE.SphereGeometry(0.48, 32, 32); 
+
+const eyeGeometry = new THREE.SphereGeometry(0.12, 16, 16);
+const eyeMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff });
+const npcEyeMaterial = new THREE.MeshStandardMaterial({ color: 0xf1c40f }); 
+const pupilGeometry = new THREE.SphereGeometry(0.06, 16, 16);
+const pupilMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+
+function createRealisticApple(gold = false) {
+    const appleGroup = new THREE.Group();
+    const appleGeo = new THREE.SphereGeometry(0.38, 32, 32);
+    
+    const appleMat = gold ? 
+        new THREE.MeshStandardMaterial({ color: 0xf1c40f, roughness: 0.1, metalness: 0.8 }) : 
+        new THREE.MeshStandardMaterial({ color: 0xcc2424, roughness: 0.15 });
+        
+    const apple = new THREE.Mesh(appleGeo, appleMat);
+    apple.scale.set(1, 1, 0.88); 
+    appleGroup.add(apple);
+
+    const stemGeo = new THREE.CylinderGeometry(0.02, 0.015, 0.22, 12);
+    const stemMat = new THREE.MeshStandardMaterial({ color: gold ? 0x964b00 : 0x5c4033 });
+    const stem = new THREE.Mesh(stemGeo, stemMat);
+    stem.position.set(0, 0.12, 0.28);
+    stem.rotation.set(Math.PI / 3, 0, -Math.PI / 6);
+    appleGroup.add(stem);
+
+    const leafGeo = new THREE.SphereGeometry(0.07, 16, 16);
+    const leafMat = new THREE.MeshStandardMaterial({ color: gold ? 0x27ae60 : 0x2ecc71 });
+    const leaf = new THREE.Mesh(leafGeo, leafMat);
+    leaf.scale.set(2, 0.6, 0.2); 
+    leaf.position.set(0.12, 0.2, 0.32);
+    leaf.rotation.set(Math.PI / 4, 0, -Math.PI / 4);
+    appleGroup.add(leaf);
+
+    return appleGroup;
+}
+
+function spawnFood() {
+    if (foodMesh) scene.remove(foodMesh);
+    const range = worldSize / 2 - 1;
+    foodPosition.set((Math.random() - 0.5) * range * 2, (Math.random() - 0.5) * range * 2, 0.05);
+    
+    isGoldApple = Math.random() < 0.25; 
+    
+    foodMesh = createRealisticApple(isGoldApple);
+    foodMesh.position.copy(foodPosition);
+    scene.add(foodMesh);
+}
+
+function createVisualSegment(index, isHead, isNpc) {
+    let mesh;
+    const mat = isNpc ? npcMaterial : playerMaterial; 
+    
+    if (isHead) {
+        mesh = new THREE.Mesh(headGeometry, mat);
+        const e1 = new THREE.Mesh(eyeGeometry, isNpc ? npcEyeMaterial : eyeMaterial);
+        const e2 = new THREE.Mesh(eyeGeometry, isNpc ? npcEyeMaterial : eyeMaterial);
+        const p1 = new THREE.Mesh(pupilGeometry, pupilMaterial);
+        const p2 = new THREE.Mesh(pupilGeometry, pupilMaterial);
+        e1.position.set(0.24, 0.18, 0.22); e2.position.set(0.24, -0.18, 0.22);
+        p1.position.set(0.32, 0.18, 0.28); p2.position.set(0.32, -0.18, 0.28);
+        mesh.add(e1, e2, p1, p2);
+    } else {
+        mesh = new THREE.Mesh(bodyGeometry, mat);
+        const scale = Math.max(0.6, 1 - (index / 40)); 
+        mesh.scale.set(scale, scale, scale);
+    }
+    scene.add(mesh);
+    return mesh;
+}
+
+function createNpc() {
+    let npc = { segments: [], history: [], angle: Math.random() * Math.PI * 2 };
+    const startX = (Math.random() - 0.5) * (worldSize - 4);
+    const startY = (Math.random() - 0.5) * (worldSize - 4);
+
+    for (let i = 0; i < 5; i++) {
+        const seg = createVisualSegment(i, i === 0, true);
+        seg.position.set(startX - (i * baseNpcSpeed), startY, 0);
+        npc.segments.push(seg);
+    }
+    for (let i = 0; i < 100; i++) {
+        npc.history.push(new THREE.Vector3(startX - (i * baseNpcSpeed), startY, 0));
+    }
+    return npc;
+}
+
+function removeNpc(npc) {
+    npc.segments.forEach(seg => scene.remove(seg));
+}
+
+function resetGame() {
+    score = 0;
+    targetAngle = 0; currentAngle = 0;
+    speed = baseSpeed;
+    speedBoostTimer = 0;
+    npcRespawnTimer = 0;
+
+    snakeSegments.forEach(seg => scene.remove(seg));
+    snakeSegments = []; snakeHistory = [];
+
+    for (let i = 0; i < 4; i++) {
+        const seg = createVisualSegment(i, i === 0, false);
+        seg.position.set(0, 0, 0);
+        snakeSegments.push(seg);
+    }
+    for (let i = 0; i < 150; i++) {
+        snakeHistory.push(new THREE.Vector3(0 - (i * speed), 0, 0));
+    }
+
+    npcs.forEach(npc => removeNpc(npc));
+    npcs = [];
+    for (let i = 0; i < numNpcs; i++) {
+        npcs.push(createNpc());
+    }
+
+    spawnFood();
+}
+
+function lerpAngle(a, b, t) {
+    let cs = (1 - t) * Math.cos(a) + t * Math.cos(b);
+    let sn = (1 - t) * Math.sin(a) + t * Math.sin(b);
+    return Math.atan2(sn, cs);
+}
+
+function updateGameLogic() {
+    if (snakeSegments.length === 0) return;
+
+    // МЕХАНИКА ЗАМЕДЛЕНИЯ ИГРОКА: За каждый съеденный сегмент скорость падает на 0.003
+    // Но скорость не может упасть ниже минимального лимита (0.05), чтобы змейка не остановилась совсем
+    let weightSlowdown = (snakeSegments.length - 4) * 0.003;
+    let currentBaseSpeed = Math.max(0.05, baseSpeed - weightSlowdown);
+
+    // Расчёт и вывод состояния ТУРБО / Обычной скорости
+    let scoreText = `Счёт: ${score}`;
+    if (speedBoostTimer > 0) {
+        speedBoostTimer--;
+        speed = baseSpeed * 1.6; // Золотое яблоко временно игнорирует тяжесть и ускоряет
+        scoreText += ` <span style="color:#f1c40f;">⚡ ТУРБО!</span>`;
+    } else {
+        speed = currentBaseSpeed; 
+    }
+    
+    if (npcRespawnTimer > 0) {
+        npcRespawnTimer--;
+        const secondsLeft = Math.ceil(npcRespawnTimer / 60);
+        scoreText += ` | 🔴 Воришка возродится через: ${secondsLeft}с`;
+        
+        if (npcRespawnTimer === 0 && npcs.length === 0) {
+            npcs.push(createNpc()); 
+        }
+    }
+    scoreEl.innerHTML = scoreText;
+
+    // --- ДВИЖЕНИЕ ИГРОКА ---
+    currentAngle = lerpAngle(currentAngle, targetAngle, 0.15);
+    const head = snakeSegments[0];
+    head.position.x += Math.cos(currentAngle) * speed;
+    head.position.y += Math.sin(currentAngle) * speed;
+    head.rotation.z = currentAngle;
+
+    const halfWorld = worldSize / 2;
+    if (head.position.x > halfWorld) head.position.x = -halfWorld;
+    if (head.position.x < -halfWorld) head.position.x = halfWorld;
+    if (head.position.y > halfWorld) head.position.y = -halfWorld;
+    if (head.position.y < -halfWorld) head.position.y = halfWorld;
+
+    snakeHistory.unshift(head.position.clone());
+    if (snakeHistory.length > snakeSegments.length * segmentSpacing + 20) snakeHistory.pop();
+
+    for (let i = 1; i < snakeSegments.length; i++) {
+        const idx = i * segmentSpacing;
+        if (snakeHistory[idx]) snakeSegments[i].position.copy(snakeHistory[idx]);
+    }
+
+    // Поедание яблок игроком
+    if (head.position.distanceTo(foodPosition) < 0.75) {
+        if (isGoldApple) {
+            score += 2;          
+            speedBoostTimer = 300; 
+        } else {
+            score += 1;
+        }
+        
+        const nextIdx = snakeSegments.length;
+        const newSeg = createVisualSegment(nextIdx, false, false);
+        newSeg.position.copy(snakeSegments[nextIdx - 1].position);
+        snakeSegments.push(newSeg);
+        
+        spawnFood();
+    }
+
+    // Самопересечение
+    for (let i = 6; i < snakeSegments.length; i++) {
+        if (head.position.distanceTo(snakeSegments[i].position) < 0.4) {
+            alert("Игра окончена! Ты врезался в себя. Твой счёт: " + score);
+            resetGame();
+            return;
+        }
+    }
+
+    // --- ЛОГИКА И СТОЛКНОВЕНИЯ NPC ---
+    for (let n = npcs.length - 1; n >= 0; n--) {
+        const npc = npcs[n];
+        const npcHead = npc.segments[0];
+
+        // МЕХАНИКА ЗАМЕДЛЕНИЯ NPC: За каждый добавленный сегмент замедляется на 0.004
+        let npcWeightSlowdown = (npc.segments.length - 5) * 0.004;
+        let currentNpcSpeed = Math.max(0.05, baseNpcSpeed - npcWeightSlowdown);
+
+        // Столкновение: Игрок головой в тело NPC -> Проигрыш
+        for (let i = 0; i < npc.segments.length; i++) {
+            if (head.position.distanceTo(npc.segments[i].position) < 0.45) {
+                alert("Ты врезался в красного воришку! Игра окончена. Счёт: " + score);
+                resetGame();
+                return;
+            }
+        }
+
+        // Столкновение: NPC головой в тело Игрока -> Уничтожение NPC на 20 секунд
+        let npcCrushed = false;
+        for (let i = 0; i < snakeSegments.length; i++) {
+            if (npcHead.position.distanceTo(snakeSegments[i].position) < 0.45) {
+                removeNpc(npc);
+                npcs.splice(n, 1);
+                npcRespawnTimer = 1200; 
+                npcCrushed = true;
+                break;
+            }
+        }
+
+        if (npcCrushed) continue; 
+
+        // Движение живого NPC с учётом его текущей скорости (замедленной от еды)
+        const diffX = foodPosition.x - npcHead.position.x;
+        const diffY = foodPosition.y - npcHead.position.y;
+        const desiredAngle = Math.atan2(diffY, diffX);
+        
+        npc.angle = lerpAngle(npc.angle, desiredAngle, 0.08);
+
+        npcHead.position.x += Math.cos(npc.angle) * currentNpcSpeed;
+        npcHead.position.y += Math.sin(npc.angle) * currentNpcSpeed;
+        npcHead.rotation.z = npc.angle;
+
+        if (npcHead.position.x > halfWorld) npcHead.position.x = -halfWorld;
+        if (npcHead.position.x < -halfWorld) npcHead.position.x = halfWorld;
+        if (npcHead.position.y > halfWorld) npcHead.position.y = -halfWorld;
+        if (npcHead.position.y < -halfWorld) npcHead.position.y = halfWorld;
+
+        npc.history.unshift(npcHead.position.clone());
+        if (npc.history.length > npc.segments.length * segmentSpacing + 20) npc.history.pop();
+
+        for (let i = 1; i < npc.segments.length; i++) {
+            const idx = i * segmentSpacing;
+            if (npc.history[idx]) npc.segments[i].position.copy(npc.history[idx]);
+        }
+
+        // Если NPC крадет яблоко
+        if (npcHead.position.distanceTo(foodPosition) < 0.65) {
+            const nextIdx = npc.segments.length;
+            const newSeg = createVisualSegment(nextIdx, false, true);
+            newSeg.position.copy(npc.segments[nextIdx - 1].position);
+            npc.segments.push(newSeg);
+
+            spawnFood();
+        }
+    }
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+    updateGameLogic();
+    if (foodMesh) {
+        foodMesh.position.z = 0.05 + Math.sin(Date.now() * 0.004) * 0.08; 
+        foodMesh.rotation.z += 0.015; 
+        if (isGoldApple) {
+            foodMesh.rotation.x = Math.sin(Date.now() * 0.002) * 0.2;
+        }
+    }
+    renderer.render(scene, camera);
+}
+animate();
+
+// Управление
+document.addEventListener("keydown", e => {
+    if (e.key === "ArrowRight") targetAngle = 0;
+    if (e.key === "ArrowUp")    targetAngle = Math.PI / 2;
+    if (e.key === "ArrowLeft")  targetAngle = Math.PI;
+    if (e.key === "ArrowDown")  targetAngle = -Math.PI / 2;
+});
+
+const joystick = document.getElementById("joystick");
+const stick = document.getElementById("stick");
+const center = 65; const maxDistance = 35;
+let active = false;
+
+function moveStick(clientX, clientY) {
+    const rect = joystick.getBoundingClientRect();
+    let x = clientX - rect.left - center;
+    let y = clientY - rect.top - center;
+    const distance = Math.sqrt(x*x + y*y);
+
+    if (distance > maxDistance) {
+        x = x / distance * maxDistance; y = y / distance * maxDistance;
+    }
+    stick.style.left = (center - 25 + x) + "px";
+    stick.style.top  = (center - 25 + y) + "px";
+
+    if (distance > 5) { targetAngle = Math.atan2(-y, x); }
+}
+
+joystick.addEventListener("touchstart", e => { active = true; moveStick(e.touches[0].clientX, e.touches[0].clientY); });
+joystick.addEventListener("touchmove", e => { if(!active) return; e.preventDefault(); moveStick(e.touches[0].clientX, e.touches[0].clientY); });
+joystick.addEventListener("touchend", () => { active = false; stick.style.left = "40px"; stick.style.top = "40px"; });
+
+void function resize() {
+    const width = Math.min(400, window.innerWidth * 0.95);
+    renderer.setSize(width, width);
+    container.style.width = width + "px"; container.style.height = width + "px";
+    window.addEventListener('resize', resize);
+}();
+
+resetGame();
+</script>
+</body>
+</html>
