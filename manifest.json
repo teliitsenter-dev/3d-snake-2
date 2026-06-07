@@ -1,0 +1,16 @@
+{
+  "name": "3D Змейка: Механика Замедления",
+  "short_name": "Змейка 3D",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#e4b77d",
+  "theme_color": "#5d4037",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/583/583011.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
