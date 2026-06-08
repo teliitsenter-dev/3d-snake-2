@@ -30,12 +30,12 @@ body {
 }
 h1 { 
     margin: 15px 0 5px; 
-    font-size: 24px; 
+    font-size: 20px; 
     text-shadow: 1px 1px 2px rgba(255,255,255,0.6); 
     text-align: center;
 }
 #score { 
-    font-size: 20px; 
+    font-size: 18px; 
     margin-bottom: 10px; 
     font-weight: bold; 
     text-align: center;
@@ -86,13 +86,14 @@ h1 {
     background: #27ae60;
     color: white;
     border: none;
-    padding: 10px 25px;
+    padding: 12px 30px;
     font-size: 18px;
     font-weight: bold;
     border-radius: 4px;
     cursor: pointer;
     margin-top: 10px;
     transition: background 0.2s;
+    touch-action: manipulation;
 }
 #start-btn:hover {
     background: #219653;
@@ -104,7 +105,7 @@ h1 {
     background: rgba(93, 64, 55, 0.4);
     border: 2px solid #5d4037;
     position: relative;
-    margin-top: 20px;
+    margin-top: 15px;
     touch-action: none;
 }
 #stick {
@@ -320,11 +321,11 @@ function spawnFood() {
     foodPosition.set((Math.random() - 0.5) * range * 2, (Math.random() - 0.5) * range * 2, 0.05);
     
     const rand = Math.random();
-    if (rand < 0.20) {
+    if (rand < 0.15) {          // 15% Шанс на Алмазное
         foodType = "diamond"; 
-    } else if (rand < 0.45) {
+    } else if (rand < 0.45) {   // 30% Шанс на Золотое (0.15 + 0.30)
         foodType = "gold";    
-    } else {
+    } else {                    // 55% Шанс на Обычное
         foodType = "normal";  
     }
     
@@ -400,6 +401,7 @@ locationSelect.addEventListener("change", (e) => {
 });
 
 function startGame() {
+    if (isGameRunning) return; 
     updateEnvironment(locationSelect.value);
     const selectedColor = parseInt(colorSelect.value);
     playerMaterial.color.setHex(selectedColor);
@@ -422,6 +424,10 @@ function startGame() {
 }
 
 startBtn.addEventListener("click", startGame);
+startBtn.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    startGame();
+});
 
 function lerpAngle(a, b, t) {
     let cs = (1 - t) * Math.cos(a) + t * Math.cos(b);
@@ -443,20 +449,21 @@ function updateGameLogic() {
 
     let scoreText = `Счёт: ${score}${winScore > 0 ? " / " + winScore : ""}`;
     let hasShield = false;
+    const currentTime = Date.now();
 
-    if (diamondTimer > 0) {
-        diamondTimer--;
+    // Проверка независимых от лагов таймеров времени
+    if (diamondTimer > currentTime) {
         hasShield = true;
         speed = baseSpeed * 1.3; 
-        const secLeft = Math.ceil(diamondTimer / 60);
+        const secLeft = Math.ceil((diamondTimer - currentTime) / 1000);
         scoreText += ` <span style="color:#f1c40f;">🛡️ ЭНЕРГОЩИТ (${secLeft}с)</span>`;
-        let wave = Math.sin(Date.now() * 0.005) * 0.2 + 0.8; 
+        let wave = Math.sin(currentTime * 0.005) * 0.2 + 0.8; 
         shieldMaterial.color.setRGB(1, 0.7 + wave * 0.25, 0.1); 
         shieldMaterial.emissive.setRGB(0.8, 0.3 * wave, 0);
-    } else if (speedBoostTimer > 0) {
-        speedBoostTimer--;
+    } else if (speedBoostTimer > currentTime) {
         speed = baseSpeed * 1.6; 
-        scoreText += ` <span style="color:#e67e22;">⚡ ТУРБО!</span>`;
+        const secLeft = Math.ceil((speedBoostTimer - currentTime) / 1000);
+        scoreText += ` <span style="color:#e67e22;">⚡ ТУРБО! (${secLeft}с)</span>`;
     } else {
         speed = currentBaseSpeed; 
     }
@@ -496,13 +503,14 @@ function updateGameLogic() {
     }
 
     if (head.position.distanceTo(foodPosition) < 0.75) {
+        const now = Date.now();
         if (foodType === "diamond") {
             score += 3;
-            diamondTimer = 300; 
+            diamondTimer = now + 15000;    // Щит на 15 секунд
             speedBoostTimer = 0; 
         } else if (foodType === "gold") {
             score += 2;          
-            speedBoostTimer = 300; 
+            speedBoostTimer = now + 10000; // Турбо на 10 секунд
             diamondTimer = 0;
         } else {
             score += 1;
@@ -629,16 +637,19 @@ function moveStick(clientX, clientY) {
 joystick.addEventListener("touchstart", e => { active = true; moveStick(e.touches[0].clientX, e.touches[0].clientY); });
 joystick.addEventListener("touchmove", e => { if(!active) return; e.preventDefault(); moveStick(e.touches[0].clientX, e.touches[0].clientY); });
 joystick.addEventListener("touchend", () => { active = false; stick.style.left = "40px"; stick.style.top = "40px"; });
+joystick.addEventListener("touchcancel", () => { active = false; stick.style.left = "40px"; stick.style.top = "40px"; });
 
-void function resize() {
+function resize() {
     const width = Math.min(400, window.innerWidth * 0.95);
     renderer.setSize(width, width);
+    camera.aspect = 1; 
+    camera.updateProjectionMatrix();
     container.style.width = width + "px"; container.style.height = width + "px";
-    window.addEventListener('resize', resize);
-}();
+}
+window.addEventListener('resize', resize);
+resize();
 
 resetGame();
 </script>
 </body>
 </html>
-
