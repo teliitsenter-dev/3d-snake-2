@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>3D Змейка</title>
+<title>3D Змейка со стрелкой</title>
 
 <link rel="manifest" href="manifest.json">
 <script>
@@ -251,6 +251,9 @@ let npcRespawnTimer = 0;
 let playerMaterial = new THREE.MeshStandardMaterial({ color: 0x27ae60, roughness: 0.3 }); 
 const npcMaterial = new THREE.MeshStandardMaterial({ color: 0xd63031, roughness: 0.3 }); 
 
+// Материал для стрелки игрока (по умолчанию белый матовый, чтобы хорошо выделяться)
+let arrowMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2 });
+
 const shieldMaterial = new THREE.MeshStandardMaterial({ 
     color: 0xf1c40f, 
     emissive: 0xd35400, 
@@ -268,6 +271,9 @@ const eyeMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff });
 const npcEyeMaterial = new THREE.MeshStandardMaterial({ color: 0xf1c40f }); 
 const pupilGeometry = new THREE.SphereGeometry(0.06, 16, 16);
 const pupilMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+
+// Переменная для хранения ссылки на стрелку игрока
+let playerArrowMesh = null;
 
 function updateEnvironment(envKey) {
     const env = environments[envKey];
@@ -334,6 +340,30 @@ function spawnFood() {
     scene.add(foodMesh);
 }
 
+// Функция создания 3D-стрелки-указателя
+function createPointerArrow(mat) {
+    const arrowGroup = new THREE.Group();
+    
+    // Основание (палочка) стрелки
+    const cylinderGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.4, 16);
+    const cylinder = new THREE.Mesh(cylinderGeo, mat);
+    cylinder.position.y = 0.2; // Сдвиг, чтобы основание начиналось от центра группы
+    arrowGroup.add(cylinder);
+    
+    // Наконечник (конус) стрелки
+    const coneGeo = new THREE.ConeGeometry(0.15, 0.3, 16);
+    const cone = new THREE.Mesh(coneGeo, mat);
+    cone.position.y = 0.55; // Ставим конус на верхушку палочки
+    arrowGroup.add(cone);
+    
+    // Разворачиваем стрелку так, чтобы «верх» (ось Y) смотрел вперед по ходу движения змейки (ось X в локальных координатах головы)
+    arrowGroup.rotation.z = -Math.PI / 2;
+    // Приподнимаем над головой змейки по оси Z, чтобы она парила сверху
+    arrowGroup.position.z = 0.9;
+    
+    return arrowGroup;
+}
+
 function createVisualSegment(index, isHead, isNpc) {
     let mesh;
     const mat = isNpc ? npcMaterial : playerMaterial; 
@@ -347,6 +377,12 @@ function createVisualSegment(index, isHead, isNpc) {
         e1.position.set(0.24, 0.18, 0.22); e2.position.set(0.24, -0.18, 0.22);
         p1.position.set(0.32, 0.18, 0.28); p2.position.set(0.32, -0.18, 0.28);
         mesh.add(e1, e2, p1, p2);
+        
+        // Если это голова игрока, добавляем в нее стрелку
+        if (!isNpc) {
+            playerArrowMesh = createPointerArrow(arrowMaterial);
+            mesh.add(playerArrowMesh);
+        }
     } else {
         mesh = new THREE.Mesh(bodyGeometry, mat);
         const scale = Math.max(0.6, 1 - (index / 40)); 
@@ -389,6 +425,7 @@ function resetGame() {
 
     snakeSegments.forEach(seg => scene.remove(seg));
     snakeSegments = []; snakeHistory = [];
+    playerArrowMesh = null; // Сбрасываем ссылку на стрелку
 
     npcs.forEach(npc => removeNpc(npc));
     npcs = [];
@@ -468,9 +505,17 @@ function updateGameLogic() {
         speed = currentBaseSpeed; 
     }
 
+    // Обновляем материалы сегментов и стрелки в зависимости от щита
     snakeSegments.forEach(seg => {
         seg.material = hasShield ? shieldMaterial : playerMaterial;
     });
+    
+    if (playerArrowMesh) {
+        // Каждым вложенным элементам стрелки задаем тот же материал, что и телу
+        playerArrowMesh.children.forEach(child => {
+            child.material = hasShield ? shieldMaterial : arrowMaterial;
+        });
+    }
     
     if (npcRespawnTimer > 0) {
         npcRespawnTimer--;
@@ -487,6 +532,11 @@ function updateGameLogic() {
     head.position.x += Math.cos(currentAngle) * speed;
     head.position.y += Math.sin(currentAngle) * speed;
     head.rotation.z = currentAngle;
+
+    // Покачивание стрелки вверх-вниз для живого эффекта
+    if (playerArrowMesh) {
+        playerArrowMesh.position.z = 0.9 + Math.sin(currentTime * 0.007) * 0.08;
+    }
 
     const halfWorld = worldSize / 2;
     if (head.position.x > halfWorld) head.position.x = -halfWorld;
@@ -653,3 +703,4 @@ resetGame();
 </script>
 </body>
 </html>
+
